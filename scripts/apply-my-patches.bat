@@ -1,0 +1,1 @@
+for %%i in (my-patches/*.patch) do git apply my-patches/%%i

@@ -1,0 +1,173 @@
+From d77b136482be2849c2159992230810ec51b1cce8 Mon Sep 17 00:00:00 2001
+From: k-Knight <28106261+k-Knight@users.noreply.github.com>
+Date: Fri, 11 Feb 2022 17:44:33 +0200
+Subject: [PATCH] improved noclip hack utility
+
+---
+ .../net/wurstclient/hacks/NoClipHack.java     | 94 +++++++++++++++----
+ 1 file changed, 78 insertions(+), 16 deletions(-)
+
+diff --git a/src/main/java/net/wurstclient/hacks/NoClipHack.java b/src/main/java/net/wurstclient/hacks/NoClipHack.java
+index 72ea0a76..1e615007 100644
+--- a/src/main/java/net/wurstclient/hacks/NoClipHack.java
++++ b/src/main/java/net/wurstclient/hacks/NoClipHack.java
+@@ -7,7 +7,10 @@
+  */
+ package net.wurstclient.hacks;
+ 
++import net.minecraft.block.AirBlock;
+ import net.minecraft.client.network.ClientPlayerEntity;
++import net.minecraft.util.math.BlockPos;
++import net.minecraft.util.math.Direction;
+ import net.wurstclient.Category;
+ import net.wurstclient.SearchTags;
+ import net.wurstclient.events.IsNormalCubeListener;
+@@ -16,26 +19,45 @@ import net.wurstclient.events.SetOpaqueCubeListener;
+ import net.wurstclient.events.UpdateListener;
+ import net.wurstclient.hack.Hack;
+ import net.wurstclient.mixinterface.IClientPlayerEntity;
++import net.wurstclient.settings.CheckboxSetting;
++import net.wurstclient.settings.SliderSetting;
++import net.wurstclient.settings.SliderSetting.ValueDisplay;
+ 
+-@SearchTags({"no clip"})
++@SearchTags({"no clip", "NoClip"})
+ public final class NoClipHack extends Hack implements UpdateListener,
+ 	PlayerMoveListener, IsNormalCubeListener, SetOpaqueCubeListener
+ {
++	public final SliderSetting speed =
++		new SliderSetting("Speed", 0.2, 0.2, 16, 0.2, ValueDisplay.DECIMAL);
++
++	private final CheckboxSetting snapToGround = new CheckboxSetting(
++		"Snap to ground",
++		"Will automatically snap you to the ground every second.",
++		false
++	);
++
++	private int updateCounter = 0; 
++	private int ticksTillSwitch = 0;
++	private boolean snap = false;
++
+ 	public NoClipHack()
+ 	{
+ 		super("NoClip");
+ 		setCategory(Category.MOVEMENT);
++		addSetting(speed);
++		addSetting(snapToGround);
+ 	}
+-	
++
+ 	@Override
+ 	public void onEnable()
+ 	{
++		updateCounter = 30;
+ 		EVENTS.add(UpdateListener.class, this);
+ 		EVENTS.add(PlayerMoveListener.class, this);
+ 		EVENTS.add(IsNormalCubeListener.class, this);
+ 		EVENTS.add(SetOpaqueCubeListener.class, this);
+ 	}
+-	
++
+ 	@Override
+ 	public void onDisable()
+ 	{
+@@ -43,15 +65,19 @@ public final class NoClipHack extends Hack implements UpdateListener,
+ 		EVENTS.remove(PlayerMoveListener.class, this);
+ 		EVENTS.remove(IsNormalCubeListener.class, this);
+ 		EVENTS.remove(SetOpaqueCubeListener.class, this);
+-		
+-		MC.player.noClip = false;
++
++		ClientPlayerEntity player = MC.player;
++		player.noClip = true;
++		player.fallDistance = 0;
++		player.setOnGround(false);
++		player.setVelocity(0, 0.1, 0);
+ 	}
+-	
++
+ 	@Override
+ 	public void onUpdate()
+ 	{
+ 		ClientPlayerEntity player = MC.player;
+-		
++
+ 		player.noClip = true;
+ 		player.fallDistance = 0;
+ 		player.setOnGround(false);
+@@ -59,27 +85,63 @@ public final class NoClipHack extends Hack implements UpdateListener,
+ 		player.getAbilities().flying = false;
+ 		player.setVelocity(0, 0, 0);
+ 		
+-		float speed = 0.2F;
+-		player.airStrafingSpeed = speed;
++		player.airStrafingSpeed = speed.getValueF();
+ 		
+-		if(MC.options.keyJump.isPressed())
+-			player.addVelocity(0, speed, 0);
+-		if(MC.options.keySneak.isPressed())
+-			player.addVelocity(0, -speed, 0);
++		if (snapToGround.isChecked())
++		{
++			updateCounter++; 
++		}
++		if (updateCounter > ticksTillSwitch)
++		{
++			updateCounter = 0;
++			if (snap)
++			{
++				snap = false;
++				ticksTillSwitch = 30;
++			}
++			else {
++				snap = true;
++				ticksTillSwitch = 5;
++			}
++		}
++
++		float snapVelocity = 0;
++		if (snap)
++		{
++			BlockPos ground = player.getBlockPos();
++			while (MC.world.getBlockState(ground).getBlock() instanceof AirBlock)
++			{
++				ground = ground.offset(Direction.Axis.Y, -1);
++				if (player.getBlockPos().getY() < -60)
++					break;
++			}
++			float distance = ground.getY() - player.getBlockPos().getY() + 1;
++			snapVelocity = Math.min(Math.max(5, speed.getValueF()), Math.abs(distance));
++			snapVelocity *= Math.signum(distance);
++
++			player.addVelocity(0, snapVelocity, 0); 
++		}
++		else
++		{
++			if(MC.options.keyJump.isPressed())
++				player.addVelocity(0, speed.getValueF(), 0);
++			if(MC.options.keySneak.isPressed())
++				player.addVelocity(0, -speed.getValueF(), 0);
++		}
+ 	}
+-	
++
+ 	@Override
+ 	public void onPlayerMove(IClientPlayerEntity player)
+ 	{
+ 		player.setNoClip(true);
+ 	}
+-	
++
+ 	@Override
+ 	public void onIsNormalCube(IsNormalCubeEvent event)
+ 	{
+ 		event.cancel();
+ 	}
+-	
++
+ 	@Override
+ 	public void onSetOpaqueCube(SetOpaqueCubeEvent event)
+ 	{
+-- 
+2.31.1.windows.1
+
